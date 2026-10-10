@@ -23,6 +23,7 @@ const MAX_CIRCLE = 300;                          // cm: größere Kreise nicht a
 let mode = 'roehre';       // 'roehre' oder 'kreis'
 let showForces = false;    // Pfeile v, F_L, F_el (per Häkchen einblendbar)
 let showCircle = true;
+let charge = -1;           // Teilchen: −1 Elektron, +1 „positives Elektron“, 0 neutral (gleiche Masse)
 let playing = true;
 let progress = 0;          // 0 … 1 (+ kurze Pause am Ende)
 let lastTime = null;
@@ -35,15 +36,20 @@ function physics() {
   const b = helmholtzField(s.coil);                     // mit Vorzeichen (+: zum Betrachter)
   const e = plateField(s.plate, s.realistic);           // mit Vorzeichen (+: Kraft nach oben)
   const onlyB = b !== 0 && s.plate === 0;
-  const r = b !== 0 ? circleRadius(s.anode, b) * 100 : Infinity;   // cm
+  const r = b !== 0 && charge !== 0 ? circleRadius(s.anode, b) * 100 : Infinity;   // cm
   const x0 = s.realistic ? -REALISTIC.magnetLeadIn * 100 : 0;       // Beginn des Feldes
-  return { s, v, b, e, onlyB, r, center: { x: x0, y: Math.sign(b) * r } };
+  // flip: Ablenkung relativ zum Elektron (+1 Elektron, −1 positiv, 0 neutral)
+  const flip = -charge;
+  const circle = onlyB && charge !== 0;                              // Kreisbahn vorhanden?
+  return { s, v, b, e, onlyB, circle, flip, r, center: { x: x0, y: Math.sign(b) * flip * r } };
 }
 
 function updateTrace() {
-  const key = JSON.stringify(beamSettings());
+  const key = JSON.stringify(beamSettings()) + charge;
   if (key === cache.key) return;
-  const pts = traceBeam(beamSettings()).points.map(p => ({ x: p.x * 100, y: p.y * 100 }));
+  // Gleiche Masse, entgegengesetzte Ladung → spiegelbildliche Bahn; ungeladen → keine Kräfte, gerade Bahn
+  const s = charge === 0 ? { ...beamSettings(), plate: 0, coil: 0 } : beamSettings();
+  const pts = traceBeam(s).points.map(p => ({ x: p.x * 100, y: -charge * p.y * 100 }));
   const lengths = [0];
   for (let i = 1; i < pts.length; i++) lengths.push(lengths[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
   cache = { key, pts, lengths, total: lengths.at(-1) || 0 };
@@ -64,7 +70,7 @@ function along(t) {
 // ---------------- Zeichnen
 function viewRegion(ph) {
   const tube = { x0: -1.6, x1: 11, y0: -3.4, y1: 3.4 };
-  if (mode !== 'kreis' || !ph.onlyB || ph.r > MAX_CIRCLE) return tube;
+  if (mode !== 'kreis' || !ph.circle || ph.r > MAX_CIRCLE) return tube;
   const { x, y } = ph.center;
   const pad = ph.r * 0.12;
   return {
@@ -205,7 +211,7 @@ function draw() {
   }
 
   // Kreisbahn mit Mittelpunkt (nur bei reinem Magnetfeld)
-  if (showCircle && ph.onlyB && ph.r <= MAX_CIRCLE) {
+  if (showCircle && ph.circle && ph.r <= MAX_CIRCLE) {
     const cx = X(ph.center.x), cy = Y(ph.center.y);
     ctx.setLineDash([8, 7]);
     ctx.strokeStyle = C.circle;
@@ -236,28 +242,35 @@ function draw() {
   const e = along(progress);
   const unit = mode === 'kreis' ? (reg.x1 - reg.x0) * 0.09 : 1.6;     // Pfeillänge in cm
   if (showForces) {
-    const fl = E_CHARGE * ph.v * Math.abs(ph.b);
-    const fel = E_CHARGE * Math.abs(ph.e);
+    const fl = Math.abs(charge) * E_CHARGE * ph.v * Math.abs(ph.b);
+    const fel = Math.abs(charge) * E_CHARGE * Math.abs(ph.e);
     const fmax = Math.max(fl, fel) || 1;
     arrow(ctx, X(e.x), Y(e.y), s * unit * e.dir.x, -s * unit * e.dir.y, C.v, 'v');
-    if (ph.b !== 0) {
-      // F_L = −e · v × B: senkrecht zu v
-      const k = Math.sign(ph.b) * unit * fl / fmax;
+    if (ph.b !== 0 && charge !== 0) {
+      // F_L = q · v × B: senkrecht zu v, Richtung hängt vom Vorzeichen der Ladung ab
+      const k = Math.sign(ph.b) * ph.flip * unit * fl / fmax;
       arrow(ctx, X(e.x), Y(e.y), s * -e.dir.y * k, -s * e.dir.x * k, C.fl, 'F_L');
     }
-    if (ph.e !== 0 && e.x >= 0 && e.x <= SCREEN_LEN) {
-      const k = Math.sign(ph.e) * unit * fel / fmax;
+    if (ph.e !== 0 && charge !== 0 && e.x >= 0 && e.x <= SCREEN_LEN) {
+      const k = Math.sign(ph.e) * ph.flip * unit * fel / fmax;
       arrow(ctx, X(e.x), Y(e.y), 0, -s * k, C.fel, 'F_el', -1);
     }
   }
-  ctx.fillStyle = '#263238';
+  const look = PARTICLES[charge];
+  ctx.fillStyle = look.color;
   ctx.beginPath(); ctx.arc(X(e.x), Y(e.y), 11, 0, 2 * Math.PI); ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('−', X(e.x), Y(e.y) - 1);
+  ctx.fillText(look.sign, X(e.x), Y(e.y) - 1);
 }
+
+const PARTICLES = {
+  [-1]: { color: '#263238', sign: '−', name: 'Elektron' },
+  [1]: { color: '#c62828', sign: '+', name: 'positives Teilchen' },
+  [0]: { color: '#78909c', sign: '', name: 'neutrales Teilchen' },
+};
 
 // ---------------- Werte und Erklärung
 const tex = (t, display = false) => katex.renderToString(t, { displayMode: display, throwOnError: false });
@@ -267,42 +280,60 @@ function updateInfo() {
   const s = ph.s;
   const sign = v => (v > 0 ? '+' : v < 0 ? '−' : '');
   $('fieldSettings').innerHTML = `U<sub>A</sub> = ${formatNumber(s.anode / 1000, 1)} kV · U<sub>P</sub> = ${sign(s.plate)}${formatNumber(Math.abs(s.plate) / 1000, 1)} kV · `
-    + `I = ${sign(s.coil)}${formatNumber(Math.abs(s.coil), 3)} A${s.realistic ? ' · realistische Werte' : ''}`;
+    + `I = ${sign(s.coil)}${formatNumber(Math.abs(s.coil), 3)} A${s.realistic ? ' · realistische Werte' : ''}`
+    + ` · Teilchen: ${PARTICLES[charge].name}`;
 
   const rows = [];
   rows.push(['Geschwindigkeit', `v = \\sqrt{\\tfrac{2\\,e\\,U_A}{m}} = ${sci(ph.v, 3)}\\,\\mathrm{\\tfrac{m}{s}}`]);
   if (ph.b !== 0) {
-    const fl = E_CHARGE * ph.v * Math.abs(ph.b);
     rows.push(['Magnetfeld', `B = ${num(Math.abs(ph.b) * 1000, 3)}\\,\\mathrm{mT}`]);
-    rows.push(['Lorentzkraft', `F_L = e\\,v\\,B = ${sci(fl, 3)}\\,\\mathrm{N}`]);
-    rows.push(['Bahnradius', `r = \\frac{m\\,v}{e\\,B} = ${num(ph.r, 1)}\\,\\mathrm{cm}`]);
+    if (charge !== 0) {
+      const fl = E_CHARGE * ph.v * Math.abs(ph.b);
+      rows.push(['Lorentzkraft', `F_L = e\\,v\\,B = ${sci(fl, 3)}\\,\\mathrm{N}`]);
+      rows.push(['Bahnradius', `r = \\frac{m\\,v}{e\\,B} = ${num(ph.r, 1)}\\,\\mathrm{cm}`]);
+    } else {
+      rows.push(['Lorentzkraft', 'F_L = q\\,v\\,B = 0 \\quad (q = 0)']);
+    }
   }
   if (ph.e !== 0) {
     const e = Math.abs(ph.e);
     rows.push(['Elektrisches Feld', `E = ${s.realistic ? '0{,}75 \\cdot ' : ''}\\frac{U_P}{d} = ${sci(e, 3)}\\,\\mathrm{\\tfrac{V}{m}}`]);
-    rows.push(['Elektrische Kraft', `F_{el} = e\\,E = ${sci(E_CHARGE * e, 3)}\\,\\mathrm{N}`]);
-    if (ph.b !== 0) rows.push(['Gerader Strahl bei', `v = \\frac{E}{B} = ${sci(e / Math.abs(ph.b), 3)}\\,\\mathrm{\\tfrac{m}{s}}`]);
+    rows.push(['Elektrische Kraft', charge !== 0 ? `F_{el} = e\\,E = ${sci(E_CHARGE * e, 3)}\\,\\mathrm{N}` : 'F_{el} = q\\,E = 0']);
+    if (ph.b !== 0 && charge !== 0) rows.push(['Gerader Strahl bei', `v = \\frac{E}{B} = ${sci(e / Math.abs(ph.b), 3)}\\,\\mathrm{\\tfrac{m}{s}}`]);
   }
   $('fieldValues').innerHTML = rows.map(([label, t]) => `<tr><td>${label}</td><td>${tex(t)}</td></tr>`).join('');
 
   const notes = [];
-  if (ph.b === 0) {
+  const particle = PARTICLES[charge].name;
+  if (charge === 1) {
+    notes.push('<p class="calc-note">Gedankenexperiment: ein Teilchen mit derselben Masse und Geschwindigkeit wie das Elektron, aber mit <strong>positiver</strong> Ladung.</p>');
+  } else if (charge === 0) {
+    notes.push('<p class="calc-note">Gedankenexperiment: ein <strong>ungeladenes</strong> Teilchen mit derselben Masse und Geschwindigkeit wie das Elektron.</p>');
+  }
+  if (charge === 0) {
+    notes.push(`<p>Auf ein ungeladenes Teilchen wirken weder die Lorentzkraft noch die elektrische Kraft (beide sind proportional zur Ladung q).
+      Es fliegt deshalb <strong>geradeaus</strong> – egal wie stark die Felder sind.</p>`);
+  } else if (ph.b === 0) {
     notes.push('<p>Es fließt kein Spulenstrom, also gibt es kein Magnetfeld. Stelle im Bedienfeld einen Spulenstrom ein.</p>');
   } else {
     notes.push(`<p>Das Magnetfeld zeigt ${ph.b > 0 ? 'aus dem Bildschirm heraus (⊙)' : 'in den Bildschirm hinein (⊗)'}.
       Die Lorentzkraft steht immer senkrecht zur Geschwindigkeit. Sie ändert nur die Richtung der Bewegung,
-      nicht den Betrag der Geschwindigkeit. Deshalb läuft das Elektron auf einer <strong>Kreisbahn</strong>.</p>`);
+      nicht den Betrag der Geschwindigkeit. Deshalb läuft das ${particle === 'Elektron' ? 'Elektron' : 'Teilchen'} auf einer <strong>Kreisbahn</strong>.</p>`);
     notes.push(`<p>Die Lorentzkraft wirkt als Zentripetalkraft:</p>${tex('e\\,v\\,B = \\frac{m\\,v^2}{r} \\quad\\Rightarrow\\quad r = \\frac{m\\,v}{e\\,B}', true)}`);
-    notes.push(`<p><strong>Richtung:</strong> Für Elektronen gilt die Drei-Finger-Regel der <strong>linken</strong> Hand:
-      Daumen in Bewegungsrichtung, Zeigefinger in Richtung des Magnetfelds, der Mittelfinger zeigt die Richtung der Kraft.</p>`);
+    notes.push(charge < 0
+      ? `<p><strong>Richtung:</strong> Für Elektronen (negative Ladung) gilt die Drei-Finger-Regel der <strong>linken</strong> Hand:
+        Daumen in Bewegungsrichtung, Zeigefinger in Richtung des Magnetfelds, der Mittelfinger zeigt die Richtung der Kraft.</p>`
+      : `<p><strong>Richtung:</strong> Für positive Ladungen gilt die Drei-Finger-Regel der <strong>rechten</strong> Hand:
+        Daumen in Bewegungsrichtung, Zeigefinger in Richtung des Magnetfelds, der Mittelfinger zeigt die Richtung der Kraft.
+        Deshalb wird das positive Teilchen zur anderen Seite abgelenkt als das Elektron.</p>`);
     if (!ph.onlyB) notes.push('<p>Zusätzlich wirkt das elektrische Feld. Die Bahn ist dann kein Kreis mehr.</p>');
-    if (ph.onlyB && ph.r > MAX_CIRCLE) notes.push('<p>Das Magnetfeld ist so schwach, dass der Kreis zu groß zum Zeichnen ist.</p>');
+    if (ph.circle && ph.r > MAX_CIRCLE) notes.push('<p>Das Magnetfeld ist so schwach, dass der Kreis zu groß zum Zeichnen ist.</p>');
   }
-  if (mode === 'kreis' && ph.onlyB && ph.r <= MAX_CIRCLE) {
+  if (mode === 'kreis' && ph.circle && ph.r <= MAX_CIRCLE) {
     notes.push('<p>In der Röhre siehst du nur ein kurzes Stück dieser Kreisbahn. Außerhalb der Röhre ist sie nur gedacht.</p>');
   }
   $('fieldExplain').innerHTML = notes.join('');
-  $('modeCircle').disabled = !(ph.onlyB && ph.r <= MAX_CIRCLE);
+  $('modeCircle').disabled = !(ph.circle && ph.r <= MAX_CIRCLE);
   if ($('modeCircle').disabled && mode === 'kreis') setMode('roehre');
 }
 
@@ -339,6 +370,18 @@ export function initFieldView() {
     onOpen: () => { updateInfo(); lastTime = null; requestAnimationFrame(frame); },
   });
   $('modeTube').addEventListener('click', () => setMode('roehre'));
+  for (const button of document.querySelectorAll('[data-charge]')) {
+    button.addEventListener('click', () => {
+      charge = Number(button.dataset.charge);
+      for (const b of document.querySelectorAll('[data-charge]')) {
+        b.classList.toggle('active', b === button);
+        b.setAttribute('aria-pressed', String(b === button));
+      }
+      progress = 0;
+      updateInfo();
+      draw();
+    });
+  }
   $('modeCircle').addEventListener('click', () => setMode('kreis'));
   const syncForces = () => {
     showForces = $('showForces').checked;

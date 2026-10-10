@@ -66,6 +66,11 @@
         <button id="modeTube" type="button" class="active">Röhre</button>
         <button id="modeCircle" type="button">Ganze Kreisbahn</button>
       </div>
+      <div class="segmented" role="group" aria-label="Teilchen">
+        <button type="button" data-charge="-1" class="active" aria-pressed="true">negativ (Elektron)</button>
+        <button type="button" data-charge="1" aria-pressed="false">positiv</button>
+        <button type="button" data-charge="0" aria-pressed="false">neutral</button>
+      </div>
       <label class="check"><input id="showForces" type="checkbox" /> Pfeile</label>
       <label class="check"><input id="showCircle" type="checkbox" checked /> Kreis und Mittelpunkt</label>
       <button id="playBtn" type="button">Anhalten</button>
@@ -77,7 +82,7 @@
       <li class="arrow-legend"><span class="dot" style="background:#ef6c00"></span><span>elektrische Kraft F<sub>el</sub></span></li>
       <li><span class="dot" style="background:#1565c0"></span><span>Magnetfeld B (⊙ heraus, ⊗ hinein)</span></li>
     </ul>
-    <p class="status">Das Elektron ist stark verlangsamt dargestellt. In Wirklichkeit durchfliegt es die Röhre in wenigen Nanosekunden.</p>
+    <p class="status">Die Bewegung ist stark verlangsamt dargestellt. In Wirklichkeit durchfliegt das Teilchen die Röhre in wenigen Nanosekunden.</p>
     <div class="measure-body">
       <section class="card">
         <h3>Werte</h3>

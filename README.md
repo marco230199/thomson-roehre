@@ -62,6 +62,10 @@ Spulen (Richtung nach Stromrichtung, Deutlichkeit nach Stärke). **Antippen der 
 Feldpfeile** (oder der Knopf „Ablenkung im Magnetfeld (2D)“) öffnet die 2D-Ansicht:
 
 - Blick auf den Leuchtschirm wie im Handblatt, Magnetfeld als ⊙ (heraus) bzw. ⊗ (hinein)
+- **Teilchen wählen:** negativ (Elektron), positiv oder neutral. Positives und neutrales Teilchen
+  sind ein Gedankenexperiment mit gleicher Masse und Geschwindigkeit wie das Elektron: Das positive
+  Teilchen wird spiegelbildlich abgelenkt (Drei-Finger-Regel der rechten Hand), das neutrale fliegt
+  geradeaus. Die Auswahl gilt nur für die 2D-Ansicht.
 - Ein Elektron läuft stark verlangsamt die Bahn entlang. Über das Häkchen „Pfeile“ (anfangs aus)
   lassen sich v, Lorentzkraft F_L und (bei Plattenspannung) elektrische Kraft F_el einblenden
 - **Ganze Kreisbahn:** zoomt heraus und zeigt den vollständigen Kreis mit Mittelpunkt M und Radius r,

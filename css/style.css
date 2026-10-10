@@ -192,7 +192,8 @@ table.values input.invalid { border-color: #c62828; background: #fff3f3; }
 }
 .field-tools .segmented button { border-radius: 0; }
 .field-tools .segmented button:first-child { border-radius: 8px 0 0 8px; }
-.field-tools .segmented button:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+.field-tools .segmented button:last-child { border-radius: 0 8px 8px 0; }
+.field-tools .segmented button + button { border-left: none; }
 .field-tools .segmented button.active { background: #1d4f91; border-color: #1d4f91; color: #fff; }
 .field-tools button:disabled { opacity: 0.45; cursor: default; }
 .legend li[hidden] { display: none; }
