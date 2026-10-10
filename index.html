@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thomson-Röhre</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="scene"></div>
+
+  <div class="header">
+    <h1>Thomson-Röhre</h1>
+    <p>Ablenkung von Elektronen in elektrischen und magnetischen Feldern</p>
+  </div>
+
+  <div class="hint">
+    <span class="hint-text">Ziehen: drehen · zwei Finger: zoomen und verschieben · Spulen antippen: Magnetfeld in 2D</span>
+    <button id="viewAll" type="button">Gesamtansicht</button>
+    <button id="viewScreen" type="button">Leuchtschirm</button>
+  </div>
+
+  <main id="measure" class="overlay-view" hidden>
+    <div class="measure-head">
+      <div>
+        <h2>Leuchtschirm</h2>
+        <p id="measureSettings"></p>
+      </div>
+      <button type="button" data-close-view>Zurück zum 3D-Aufbau</button>
+    </div>
+    <canvas id="screenCanvas" aria-label="Leuchtschirm mit Zentimeter- und Millimeterraster"></canvas>
+    <div class="measure-body">
+      <section class="card">
+        <h3>Wertetabelle</h3>
+        <table class="values">
+          <thead><tr><th>x in cm</th><th>y in cm (abgelesen)</th><th>Kontrolle</th></tr></thead>
+          <tbody id="valueRows"></tbody>
+        </table>
+        <p class="status" id="tableStatus"></p>
+        <div class="button-row">
+          <button id="checkBtn" type="button">Kontrolle</button>
+          <button id="clearBtn" type="button">Neue Messreihe</button>
+        </div>
+      </section>
+      <section class="card">
+        <h3>Auswertung</h3>
+        <p class="status">Rechne zuerst selbst. Danach kannst du deine Rechnung hier kontrollieren.</p>
+        <label class="calc-point">Messpunkt für die Rechnung: x = <select id="calcX"></select></label>
+        <button id="calcBtn" type="button" aria-expanded="false">Rechnung anzeigen</button>
+        <div id="calcOut" hidden></div>
+      </section>
+    </div>
+  </main>
+
+  <main id="fieldView" class="overlay-view" hidden>
+    <div class="measure-head">
+      <div>
+        <h2>Ablenkung im Magnetfeld</h2>
+        <p id="fieldSettings"></p>
+      </div>
+      <button type="button" data-close-view>Zurück zum 3D-Aufbau</button>
+    </div>
+    <div class="field-tools">
+      <div class="segmented" role="group" aria-label="Ausschnitt">
+        <button id="modeTube" type="button" class="active">Röhre</button>
+        <button id="modeCircle" type="button">Ganze Kreisbahn</button>
+      </div>
+      <label class="check"><input id="showForces" type="checkbox" /> Pfeile</label>
+      <label class="check"><input id="showCircle" type="checkbox" checked /> Kreis und Mittelpunkt</label>
+      <button id="playBtn" type="button">Anhalten</button>
+    </div>
+    <canvas id="fieldCanvas" aria-label="Bahn des Elektrons im Magnetfeld, Blick auf den Leuchtschirm"></canvas>
+    <ul class="legend inline">
+      <li class="arrow-legend"><span class="dot" style="background:#2e7d32"></span><span>Geschwindigkeit v</span></li>
+      <li class="arrow-legend"><span class="dot" style="background:#c62828"></span><span>Lorentzkraft F<sub>L</sub></span></li>
+      <li class="arrow-legend"><span class="dot" style="background:#ef6c00"></span><span>elektrische Kraft F<sub>el</sub></span></li>
+      <li><span class="dot" style="background:#1565c0"></span><span>Magnetfeld B (⊙ heraus, ⊗ hinein)</span></li>
+    </ul>
+    <p class="status">Das Elektron ist stark verlangsamt dargestellt. In Wirklichkeit durchfliegt es die Röhre in wenigen Nanosekunden.</p>
+    <div class="measure-body">
+      <section class="card">
+        <h3>Werte</h3>
+        <table class="readout field-values"><tbody id="fieldValues"></tbody></table>
+      </section>
+      <section class="card">
+        <h3>Warum eine Kreisbahn?</h3>
+        <div id="fieldExplain"></div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <p class="beam-status" id="beamStatus" role="status"></p>
+
+    <section>
+      <h2>Anodenspannung</h2>
+      <button id="heaterBtn" class="power" type="button">Heizung einschalten</button>
+      <div class="slider">
+        <label class="row" for="anodeSlider"><span>Anodenspannung U<sub>A</sub></span> <output id="anodeOut"></output></label>
+        <div class="stepper">
+          <button type="button" data-target="anodeSlider" data-dir="-1" aria-label="U_A verringern">−</button>
+          <input id="anodeSlider" type="range" />
+          <button type="button" data-target="anodeSlider" data-dir="1" aria-label="U_A erhöhen">+</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Kondensatorplatten</h2>
+      <div class="slider">
+        <label class="row" for="plateSlider"><span>Plattenspannung U<sub>P</sub></span> <output id="plateOut"></output></label>
+        <div class="stepper">
+          <button type="button" data-target="plateSlider" data-dir="-1" aria-label="U_P verringern">−</button>
+          <input id="plateSlider" type="range" />
+          <button type="button" data-target="plateSlider" data-dir="1" aria-label="U_P erhöhen">+</button>
+        </div>
+      </div>
+      <button id="platePolarityBtn" type="button">Polung umkehren</button>
+      <p class="status" id="plateStatus"></p>
+    </section>
+
+    <section>
+      <h2>Helmholtz-Spulen</h2>
+      <div class="slider">
+        <label class="row" for="coilSlider"><span>Spulenstrom I</span> <output id="coilOut"></output></label>
+        <div class="stepper">
+          <button type="button" data-target="coilSlider" data-dir="-1" aria-label="I verringern">−</button>
+          <input id="coilSlider" type="range" />
+          <button type="button" data-target="coilSlider" data-dir="1" aria-label="I erhöhen">+</button>
+        </div>
+      </div>
+      <button id="coilPolarityBtn" type="button">Stromrichtung umkehren</button>
+      <p class="status" id="coilStatus"></p>
+      <button id="fieldBtn" class="accent" type="button" data-view="feld" aria-expanded="false">Ablenkung im Magnetfeld (2D)</button>
+    </section>
+
+    <section>
+      <h2>Messen</h2>
+      <button id="measureBtn" class="accent" type="button" data-view="messen" aria-expanded="false">Leuchtschirm groß anzeigen</button>
+      <p class="status">Werte ablesen, eintragen, kontrollieren und die Auswertung ansehen</p>
+    </section>
+
+    <section>
+      <h2>Modell</h2>
+      <label class="check"><input id="realisticCheck" type="checkbox" /> Realistische Werte</label>
+      <p class="status" id="realisticStatus"></p>
+    </section>
+  </aside>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+        "katex": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.mjs"
+      }
+    }
+  </script>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

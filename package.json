@@ -1,0 +1,9 @@
+{
+  "name": "thomson-roehre",
+  "private": true,
+  "description": "3D-Simulation der Thomson-Röhre: Ablenkung von Elektronen in elektrischen und magnetischen Feldern",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}
