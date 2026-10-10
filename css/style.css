@@ -197,6 +197,9 @@ table.values input.invalid { border-color: #c62828; background: #fff3f3; }
 .field-tools .segmented button.active { background: #1d4f91; border-color: #1d4f91; color: #fff; }
 .field-tools button:disabled { opacity: 0.45; cursor: default; }
 .legend li[hidden] { display: none; }
+.panel[hidden] { display: none !important; }
+.sim-value { font-size: 1.05rem; margin: 2px 0 4px; }
+.panel .segmented button { flex: 1; padding-left: 4px; padding-right: 4px; }
 .legend.inline { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 10px; }
 .field-values td { vertical-align: middle; padding: 6px 0; }
 .field-values td:first-child { padding-right: 12px; color: #4a5866; }

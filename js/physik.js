@@ -71,8 +71,10 @@ export function beamIntensity({ heater, anode }) {
 /**
  * Felder am Ort x (in m) für die Einstellung s, in SI.
  * ey: elektrische Feldstärke in y (nur zwischen den Platten), bz: Magnetfeld in z.
+ * Mit { uniformB } gilt stattdessen überall dasselbe Magnetfeld ohne E-Feld (2D-Simulation).
  */
-export function fieldsAt(x, { plate, coil, realistic = false }) {
+export function fieldsAt(x, { plate, coil, realistic = false, uniformB }) {
+  if (uniformB !== undefined) return { ey: 0, bz: uniformB };
   const inPlates = x >= 0 && x <= TUBE.screenLength;
   const xField = realistic ? -REALISTIC.magnetLeadIn : 0;   // ab hier wirkt das Magnetfeld
   return {

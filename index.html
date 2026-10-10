@@ -16,7 +16,7 @@
   </div>
 
   <div class="hint">
-    <span class="hint-text">Ziehen: drehen · zwei Finger: zoomen und verschieben · Spulen antippen: Magnetfeld in 2D</span>
+    <span class="hint-text">Ziehen: drehen · zwei Finger: zoomen und verschieben · Spulen antippen: 2D-Simulation</span>
     <button id="viewAll" type="button">Gesamtansicht</button>
     <button id="viewScreen" type="button">Leuchtschirm</button>
   </div>
@@ -56,36 +56,18 @@
   <main id="fieldView" class="overlay-view" hidden>
     <div class="measure-head">
       <div>
-        <h2>Ablenkung im Magnetfeld</h2>
+        <h2>2D-Simulation: geladene Teilchen im Magnetfeld</h2>
         <p id="fieldSettings"></p>
       </div>
-      <button type="button" data-close-view>Zurück zum 3D-Aufbau</button>
-    </div>
-    <div class="field-tools">
-      <div class="segmented" role="group" aria-label="Ausschnitt">
-        <button id="modeTube" type="button" class="active">Röhre</button>
-        <button id="modeCircle" type="button">Ganze Kreisbahn</button>
-      </div>
-      <div class="segmented" role="group" aria-label="Teilchen">
-        <button type="button" data-charge="-1" class="active" aria-pressed="true">negativ (Elektron)</button>
-        <button type="button" data-charge="1" aria-pressed="false">positiv</button>
-        <button type="button" data-charge="0" aria-pressed="false">neutral</button>
-      </div>
-      <label class="check"><input id="showTrail" type="checkbox" checked /> Spur</label>
-      <label class="check"><input id="showForces" type="checkbox" /> Pfeile</label>
-      <label class="check"><input id="showCircle" type="checkbox" checked /> Kreis und Mittelpunkt</label>
-      <button id="playBtn" type="button">Anhalten</button>
-      <button id="restartBtn" type="button">Neu starten</button>
     </div>
     <canvas id="fieldCanvas" aria-label="Bahn des Elektrons im Magnetfeld, Blick auf den Leuchtschirm"></canvas>
     <ul class="legend inline">
       <li class="arrow-legend"><span class="dot" style="background:#2e7d32"></span><span>Geschwindigkeit v</span></li>
       <li class="arrow-legend"><span class="dot" style="background:#c62828"></span><span>Lorentzkraft F<sub>L</sub></span></li>
-      <li class="arrow-legend"><span class="dot" style="background:#ef6c00"></span><span>elektrische Kraft F<sub>el</sub></span></li>
       <li><span class="dot" style="background:#1565c0"></span><span>Magnetfeld B (⊙ heraus, ⊗ hinein)</span></li>
     </ul>
-    <p class="status">Die Bewegung ist stark verlangsamt dargestellt. In Wirklichkeit durchfliegt das Teilchen die Röhre in wenigen Nanosekunden.
-      Nach „Anhalten“ kannst du das Teilchen verschieben und an der Spitze des v-Pfeils die Flugrichtung drehen.</p>
+    <p class="status">Die Bewegung ist stark verlangsamt dargestellt. Nach „Anhalten“ kannst du das Teilchen verschieben und
+      an der Spitze des v-Pfeils Richtung und Betrag der Geschwindigkeit einstellen.</p>
     <div class="measure-body">
       <section class="card">
         <h3>Werte</h3>
@@ -98,7 +80,7 @@
     </div>
   </main>
 
-  <aside class="panel">
+  <aside class="panel" id="expPanel">
     <p class="beam-status" id="beamStatus" role="status"></p>
 
     <section>
@@ -140,7 +122,7 @@
       </div>
       <button id="coilPolarityBtn" type="button">Stromrichtung umkehren</button>
       <p class="status" id="coilStatus"></p>
-      <button id="fieldBtn" class="accent" type="button" data-view="feld" aria-expanded="false">Ablenkung im Magnetfeld (2D)</button>
+      <button id="fieldBtn" class="accent" type="button" data-view="feld" aria-expanded="false">Zur 2D-Simulation</button>
     </section>
 
     <section>
@@ -153,6 +135,56 @@
       <h2>Modell</h2>
       <label class="check"><input id="realisticCheck" type="checkbox" /> Realistische Werte</label>
       <p class="status" id="realisticStatus"></p>
+    </section>
+  </aside>
+
+  <aside class="panel" id="simPanel" hidden>
+    <section>
+      <h2>2D-Simulation</h2>
+      <p class="status">Gedankenexperiment, unabhängig vom echten Versuch. Beim Öffnen werden Geschwindigkeit
+        und Magnetfeld aus dem Experiment übernommen.</p>
+      <button type="button" class="accent" data-close-view>Zurück zum Experiment</button>
+    </section>
+    <section>
+      <h2>Teilchen</h2>
+      <div class="segmented" role="group" aria-label="Teilchen">
+        <button type="button" data-charge="-1" class="active" aria-pressed="true">negativ</button>
+        <button type="button" data-charge="1" aria-pressed="false">positiv</button>
+        <button type="button" data-charge="0" aria-pressed="false">neutral</button>
+      </div>
+    </section>
+    <section>
+      <h2>Magnetfeld</h2>
+      <div class="slider">
+        <label class="row" for="simBSlider"><span>Magnetfeld B</span> <output id="simBOut"></output></label>
+        <div class="stepper">
+          <button type="button" data-sim-step="-1" aria-label="B verringern">−</button>
+          <input id="simBSlider" type="range" />
+          <button type="button" data-sim-step="1" aria-label="B erhöhen">+</button>
+        </div>
+      </div>
+      <button id="simBDirBtn" type="button">Richtung umkehren</button>
+      <p class="status" id="simBStatus"></p>
+    </section>
+    <section>
+      <h2>Geschwindigkeit</h2>
+      <div class="sim-value" id="simVOut"></div>
+      <p class="status">Anhalten, dann die Spitze des v-Pfeils ziehen: Die Länge bestimmt den Betrag, die Richtung die Flugrichtung.</p>
+    </section>
+    <section>
+      <h2>Bewegung</h2>
+      <button id="playBtn" class="power on" type="button">Anhalten</button>
+      <button id="restartBtn" type="button">Neu starten</button>
+    </section>
+    <section>
+      <h2>Darstellung</h2>
+      <div class="segmented" role="group" aria-label="Ausschnitt">
+        <button id="modeTube" type="button" class="active">Röhre</button>
+        <button id="modeCircle" type="button">Ganze Kreisbahn</button>
+      </div>
+      <label class="check"><input id="showTrail" type="checkbox" checked /> Spur</label>
+      <label class="check"><input id="showForces" type="checkbox" /> Pfeile</label>
+      <label class="check"><input id="showCircle" type="checkbox" checked /> Kreis und Mittelpunkt</label>
     </section>
   </aside>
 

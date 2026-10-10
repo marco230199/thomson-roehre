@@ -11,7 +11,7 @@ Helmholtz-Spulenpaars. Aufbau nach dem Leybold-Handblatt P3.8.5.1 (siehe [docs/]
 - [x] Schritt 2: 3D-Aufbau (Röhre, Ständer, Helmholtz-Spulen, Netzgeräte)
 - [x] Schritt 3: Schieberegler, Heizung, Polung, Strahl auf dem Leuchtschirm
 - [x] Schritt 4: Messen: Großansicht des Schirms, Wertetabelle, e/m
-- [x] Schritt 5: Klick auf das Magnetfeld → 2D-Ansicht der Ablenkung
+- [x] Schritt 5: Klick auf das Magnetfeld → 2D-Simulation (entkoppelt vom Experiment)
 - [ ] Schritt 6: Feinschliff, Tablet-Bedienung, Weitergabe
 
 ## Starten
@@ -55,35 +55,31 @@ daneben, die Regler wirken sofort.
   (Einzelheiten in [docs/physikmodell.md](docs/physikmodell.md#auswertung-rechnung-anzeigen)).
 - `index.html?ansicht=messen` öffnet direkt die Messansicht.
 
-### Magnetfeld in 2D
+### 2D-Simulation
 
 Bei eingeschaltetem Spulenstrom zeigen blaue Pfeile im 3D-Aufbau das Magnetfeld zwischen den
-Spulen (Richtung nach Stromrichtung, Deutlichkeit nach Stärke). **Antippen der Spulen oder der
-Feldpfeile** (oder der Knopf „Ablenkung im Magnetfeld (2D)“) öffnet die 2D-Ansicht:
+Spulen. **Antippen der Spulen oder der Feldpfeile** (oder der Knopf „Zur 2D-Simulation“) öffnet die
+2D-Simulation. Sie ist **bewusst vom Experiment entkoppelt** (Gedankenexperiment, auch positive und
+neutrale Teilchen): Das Bedienfeld des Experiments verschwindet, an seiner Stelle erscheint ein
+eigenes Steuerfeld. Beim Öffnen werden Geschwindigkeit (aus U_A) und Magnetfeld (aus dem
+Spulenstrom) einmalig übernommen, danach ist die Simulation unabhängig.
 
-- Blick auf den Leuchtschirm wie im Handblatt, Magnetfeld als ⊙ (heraus) bzw. ⊗ (hinein)
-- **Teilchen wählen:** negativ (Elektron), positiv oder neutral. Positives und neutrales Teilchen
-  sind ein Gedankenexperiment mit gleicher Masse und Geschwindigkeit wie das Elektron: Das positive
-  Teilchen wird spiegelbildlich abgelenkt (Drei-Finger-Regel der rechten Hand), das neutrale fliegt
-  geradeaus. Die Auswahl gilt nur für die 2D-Ansicht.
-- Ein einzelnes Teilchen fliegt stark verlangsamt durch die Felder (eigener Zustand aus Ort und
-  Geschwindigkeit, dieselbe Physik wie der Strahl). Über das Häkchen „Pfeile“ (anfangs aus) lassen
-  sich v, Lorentzkraft F_L und (bei Plattenspannung) elektrische Kraft F_el einblenden
-- **Spur** ein/aus: Die Spur zeigt den Weg, den das Teilchen tatsächlich zurückgelegt hat (nach dem
-  Verschieben beginnt ein neues Spurstück; „Neu starten“ löscht sie). Den berechneten Strahl gibt
-  es in der 2D-Ansicht nicht.
-- **Anhalten** heißt: Das Teilchen steht still. Ändert man dann Spulenstrom oder Spannung, bleibt
-  es an seinem Ort; nur die Vorschau (gestrichelter Kreis mit Mittelpunkt) passt sich an
-- Im angehaltenen Zustand lässt sich das Teilchen **frei verschieben** und über den Griff an der
-  Spitze des v-Pfeils die **Flugrichtung drehen**. Mit „Weiter“ fliegt es von dort weiter.
-  **Neu starten** setzt es zurück an die Blende
-- **Ganze Kreisbahn:** zoomt heraus und zeigt den vollständigen Kreis mit Mittelpunkt M und Radius r,
-  von dem der Strahl in der Röhre nur ein kurzes Stück ist (nur bei reinem Magnetfeld)
-- Werte v, B, F_L, r (und E, F_el, v = E/B bei zusätzlichem E-Feld)
-- Erklärung: Lorentzkraft als Zentripetalkraft (e·v·B = m·v²/r), Drei-Finger-Regel der linken Hand
-  für Elektronen
-- `index.html?ansicht=feld&I=0.2` öffnet direkt die 2D-Ansicht.
-- Im Hochformat (Tablet, Handy) liegt das Bedienfeld unten, im Querformat rechts.
+- **Teilchen:** negativ (Elektron), positiv oder neutral, jeweils mit der Masse des Elektrons. Das
+  positive Teilchen wird spiegelbildlich abgelenkt (Drei-Finger-Regel der rechten Hand), das
+  neutrale fliegt geradeaus.
+- **Magnetfeld:** eigener Regler 0–5 mT und „Richtung umkehren“ (⊙ heraus / ⊗ hinein). Das Feld
+  ist überall homogen; ein elektrisches Feld gibt es hier nicht.
+- **Geschwindigkeit:** über den ziehbaren v-Pfeil (nur im angehaltenen Zustand): Länge = Betrag
+  (0,5–8 · 10⁷ m/s), Richtung = Flugrichtung. Schnellere Teilchen bewegen sich auch in der
+  Animation schneller.
+- **Bewegung:** Anhalten heißt Stillstand – Änderungen am Magnetfeld verschieben das Teilchen
+  nicht, nur die Vorschau (gestrichelter Kreis mit Mittelpunkt) passt sich an. Angehalten lässt
+  sich das Teilchen frei verschieben. „Neu starten“ setzt es zurück an die Blende.
+- **Darstellung:** Ausschnitt „Röhre“ oder „Ganze Kreisbahn“; **Spur** (tatsächlich zurückgelegter
+  Weg, nach dem Verschieben beginnt ein neues Stück), **Pfeile** (v und F_L, anfangs aus),
+  **Kreis und Mittelpunkt**
+- Werte v, B, F_L, r und eine Erklärung (Lorentzkraft als Zentripetalkraft, Drei-Finger-Regel)
+- `index.html?ansicht=feld&UA=4&I=0.2` öffnet direkt die 2D-Simulation mit diesen Startwerten.
 
 ### Startwerte per Link
 
@@ -130,9 +126,9 @@ thomson-roehre/
 │   ├── staender.js      # Röhrenständer, Helmholtz-Spulen, Feldpfeile
 │   ├── netzgeraete.js   # Netzgeräte und Kabel
 │   ├── bedienfeld.js    # Regler, Knöpfe, Statusanzeigen
-│   ├── ansichten.js     # Umschalten 3D-Aufbau / Messansicht / 2D-Magnetfeld
+│   ├── ansichten.js     # Umschalten 3D-Aufbau / Messansicht / 2D-Simulation
 │   ├── messen.js        # Messansicht: großer Schirm, Wertetabelle, Auswertung
-│   ├── feldansicht.js   # 2D-Ansicht: Elektron im Magnetfeld, Kreisbahn, Kräfte
+│   ├── feldansicht.js   # 2D-Simulation: Teilchen im Magnetfeld, eigenes Steuerfeld
 │   ├── auswertung.js    # Rechenwege für „Rechnung anzeigen“ (ohne DOM, testbar)
 │   ├── hilfen.js        # Hilfsfunktionen
 │   └── materialien.js   # gemeinsame Materialien

@@ -7,7 +7,6 @@ import { formatNumber } from './hilfen.js';
 import { updateBeam } from './roehre.js';
 import { updateSupplies, buildCables } from './netzgeraete.js';
 import { updateMeasure } from './messen.js';
-import { updateFieldView } from './feldansicht.js';
 import { updateFieldArrows } from './staender.js';
 
 const $ = id => document.getElementById(id);
@@ -46,7 +45,6 @@ export function refresh({ cables = false } = {}) {
   $('beamStatus').textContent = beamText(beam);
   $('beamStatus').classList.toggle('warn', beam.end === 'plate' || beam.end === 'turned' || !beam.visible);
   updateMeasure();
-  updateFieldView();
   updateFieldArrows(beamSettings().coil);
 }
 
@@ -68,7 +66,7 @@ export function initUi() {
     });
   }
   // −/+ Knöpfe: ein Schritt pro Tipp, bei gedrückt halten wiederholt
-  for (const button of document.querySelectorAll('.stepper button')) {
+  for (const button of document.querySelectorAll('.stepper button[data-target]')) {
     const s = sliders[button.dataset.target];
     const step = () => {
       const value = state[s.key] + Number(button.dataset.dir) * s.range.step;

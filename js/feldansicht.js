@@ -1,37 +1,47 @@
 // ------------------------------------------------------------------
-// 2D-Ansicht: Ablenkung des Elektrons im Magnetfeld
-// Blick auf den Leuchtschirm (wie im Handblatt), Elektron läuft verlangsamt die Bahn entlang.
+// 2D-Simulation: geladene Teilchen im Magnetfeld
+// Entkoppelt vom Experiment (Gedankenexperiment, auch positive und neutrale Teilchen).
+// Eigenes Steuerfeld: Magnetfeld B per Regler, Geschwindigkeit per ziehbarem v-Pfeil.
+// Beim Öffnen werden v (aus U_A) und B (aus dem Spulenstrom) einmalig aus dem Experiment übernommen.
+// Die Röhre bleibt als Hintergrund; das Magnetfeld ist überall homogen, es gibt kein E-Feld.
 // ------------------------------------------------------------------
 import katex from 'katex';
-import { TUBE, E_CHARGE, E_OVER_M, REALISTIC } from './config.js';
+import { TUBE, E_CHARGE, E_OVER_M } from './config.js';
 import { beamSettings } from './state.js';
-import {
-  beamIntensity, helmholtzField, electronSpeed, plateField, circleRadius,
-  stepParticle, fieldsAt, beamStartX,
-} from './physik.js';
+import { helmholtzField, electronSpeed, stepParticle, beamStartX } from './physik.js';
 import { sci, num } from './auswertung.js';
 import { formatNumber } from './hilfen.js';
 import { registerView, currentView } from './ansichten.js';
 
 const $ = id => document.getElementById(id);
 const C = {
-  v: '#2e7d32', fl: '#c62828', fel: '#ef6c00', b: '#1565c0', beam: '#0277bd',
+  v: '#2e7d32', fl: '#c62828', beam: '#0277bd',
   plate: '#8d969f', screen: '#e4f2e8', ink: '#33404d', circle: '#7b8794',
 };
 const SCREEN_LEN = TUBE.screenLength * 100;    // cm
 const HALF_GAP = TUBE.plateDistance * 50;       // cm
-const DURATION = 3.2;                            // s, um die Breite des Ausschnitts zu durchfliegen
+const DURATION = 3.2;                            // s, um bei V_REF die Breite des Ausschnitts zu durchfliegen
 const MAX_CIRCLE = 300;                          // cm: größere Kreise nicht als ganze Bahn zeigen
+const START_X = beamStartX(false);               // Startpunkt hinter der Blende, in m
 
-let mode = 'roehre';       // 'roehre' oder 'kreis'
-let showForces = false;    // Pfeile v, F_L, F_el (per Häkchen einblendbar)
-let showCircle = true;
+// Regler und Grenzen der 2D-Simulation
+const B_RANGE = { min: 0, max: 5e-3, step: 0.05e-3 };   // Magnetfeld in T
+const V_REF = electronSpeed(4000);                       // Bezugsgeschwindigkeit (Pfeillänge = 1 Einheit)
+const V_RANGE = { min: 0.5e7, max: 8e7 };                // Geschwindigkeit in m/s
+
+let fieldMag = 0;          // Betrag des Magnetfelds in T
+let fieldDir = 1;          // +1: aus dem Bildschirm heraus (⊙), −1: hinein (⊗)
+const simBField = () => fieldDir * fieldMag;   // Magnetfeld mit Vorzeichen
+let startSpeed = V_REF;    // Betrag der Geschwindigkeit beim Neustart
 let charge = -1;           // Teilchen: −1 Elektron, +1 „positives Elektron“, 0 neutral (gleiche Masse)
+let mode = 'roehre';       // 'roehre' oder 'kreis'
+let showForces = false;    // Pfeile v, F_L (per Häkchen einblendbar)
+let showCircle = true;
 let showTrail = true;      // Spur: tatsächlich zurückgelegter Weg des Teilchens
 let playing = true;
 let lastTime = null;
 // Das einzelne Teilchen: Ort in m, Geschwindigkeit in m/s. Angehalten bleibt es genau hier,
-// auch wenn sich die Felder ändern.
+// auch wenn sich das Magnetfeld ändert.
 let part = null;
 let hitAt = null;          // Zeitpunkt, zu dem das Teilchen auf eine Platte getroffen ist
 let drag = null;           // 'pos' oder 'dir' beim Ziehen
@@ -39,26 +49,23 @@ let trail = [];            // Spur in cm: Liste von Teilstücken (neues Stück n
 const TRAIL_MAX = 6000;     // höchstens so viele Punkte, die ältesten fallen weg
 let view = null;           // Abbildung cm → Pixel des letzten Bildes
 
+const clamp = (v, r) => Math.min(r.max, Math.max(r.min, v));
+const simSettings = () => ({ uniformB: simBField() });
+
 // ---------------- Physik der aktuellen Einstellung
 function physics() {
-  const s = beamSettings();
-  const v = electronSpeed(s.anode);
-  const b = helmholtzField(s.coil);                     // mit Vorzeichen (+: zum Betrachter)
-  const e = plateField(s.plate, s.realistic);           // mit Vorzeichen (+: Kraft nach oben)
-  const onlyB = b !== 0 && s.plate === 0;
-  const r = b !== 0 && charge !== 0 ? circleRadius(s.anode, b) * 100 : Infinity;   // cm
-  const x0 = s.realistic ? -REALISTIC.magnetLeadIn * 100 : 0;       // Beginn des Feldes
-  // flip: Ablenkung relativ zum Elektron (+1 Elektron, −1 positiv, 0 neutral)
-  const flip = -charge;
-  const circle = onlyB && charge !== 0;                              // Kreisbahn vorhanden?
-  return { s, v, b, e, onlyB, circle, flip, r, center: { x: x0, y: Math.sign(b) * flip * r } };
+  const speed = part ? Math.hypot(part.vx, part.vy) : startSpeed;
+  const b = simBField();
+  const circle = b !== 0 && charge !== 0;                            // Kreisbahn vorhanden?
+  const r = circle ? speed / (E_OVER_M * Math.abs(b)) * 100 : Infinity;   // cm
+  // Kreis durch den Startpunkt (für den Ausschnitt „ganze Kreisbahn“)
+  const center = { x: START_X * 100, y: Math.sign(b) * -charge * r };
+  return { b, speed, circle, r, center };
 }
-
 
 // ---------------- Das einzelne Teilchen
 function resetParticle() {
-  const st = beamSettings();
-  part = { x: beamStartX(st.realistic), y: 0, vx: electronSpeed(Math.max(st.anode, 1)), vy: 0 };
+  part = { x: START_X, y: 0, vx: startSpeed, vy: 0 };
   hitAt = null;
   trail = [[{ x: part.x * 100, y: part.y * 100 }]];
 }
@@ -69,14 +76,13 @@ const PLATE_X = [-0.002, TUBE.screenLength + 0.002];       // Ausdehnung der Pla
 /** Teilchen um die Weglänge ds (in cm) weiterbewegen; trifft es eine Platte, bleibt es dort. */
 function advance(ds) {
   const speed = Math.hypot(part.vx, part.vy);
-  if (speed === 0) return;
+  if (speed === 0 || ds <= 0) return;
   const steps = Math.max(1, Math.ceil(ds / 0.05));
   const dt = ds / 100 / speed / steps;
-  const st = beamSettings();
   const qm = charge * E_OVER_M;
   for (let i = 0; i < steps; i++) {
     const prev = { x: part.x, y: part.y };
-    stepParticle(part, dt, st, qm);
+    stepParticle(part, dt, simSettings(), qm);
     addTrailPoint();
     for (const yp of [HALF_GAP_M, -HALF_GAP_M]) {
       if ((prev.y - yp) * (part.y - yp) < 0) {
@@ -175,6 +181,7 @@ function draw() {
   const cv = $('fieldCanvas');
   const W = cv.clientWidth;
   if (W === 0) return;
+  if (!part) resetParticle();
   const ph = physics();
   const H = Math.round(W * (mode === 'kreis' ? 0.7 : 0.55));
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -201,7 +208,7 @@ function draw() {
   ctx.fillStyle = C.screen;
   ctx.fillRect(X(0), Y(HALF_GAP), s * SCREEN_LEN, s * 2 * HALF_GAP);
 
-  // Magnetfeld: ⊙ (zum Betrachter) oder ⊗ (vom Betrachter weg)
+  // Magnetfeld: ⊙ (aus dem Bildschirm heraus) oder ⊗ (hinein)
   if (ph.b !== 0) {
     const step = mode === 'kreis' ? niceStep((reg.x1 - reg.x0) / 14) : 1;
     const alpha = 0.3 + 0.5 * Math.min(1, Math.abs(ph.b) / 1e-3);
@@ -239,31 +246,10 @@ function draw() {
     ctx.textBaseline = 'bottom';
     ctx.fillText('Blende', X(-0.65), Y(-0.9) + 22);
   }
-  if (ph.s.plate !== 0) {
-    ctx.font = 'bold 18px system-ui, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    const top = ph.s.plate > 0 ? '+' : '−', bottom = ph.s.plate > 0 ? '−' : '+';
-    ctx.fillStyle = top === '+' ? '#c62828' : '#1e5bc6';
-    ctx.fillText(top, X(-0.3), Y(HALF_GAP) - plateH / 2);
-    ctx.fillStyle = bottom === '+' ? '#c62828' : '#1e5bc6';
-    ctx.fillText(bottom, X(-0.3), Y(-HALF_GAP) + plateH / 2);
-  }
 
-  const visible = beamIntensity(ph.s) > 0;
-  if (!visible) {
-    ctx.fillStyle = C.ink;
-    ctx.font = '16px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ph.s.heater ? 'Anodenspannung zu klein: kein Strahl' : 'Heizung aus: kein Strahl', W / 2, H / 2);
-    return;
-  }
-
-  if (!part) resetParticle();
   const px = X(part.x * 100), py = Y(part.y * 100);
 
-  // Kreisbahn, auf der das Teilchen von hier aus weiterfliegt (nur bei reinem Magnetfeld)
+  // Kreisbahn, auf der das Teilchen von hier aus weiterfliegt
   const circ = particleCircle(ph);
   if (showCircle && circ && circ.r <= MAX_CIRCLE) {
     const cx = X(circ.x), cy = Y(circ.y);
@@ -297,25 +283,16 @@ function draw() {
     }
   }
 
-  // Teilchen mit Pfeilen. Angehalten: v-Pfeil mit Griff zum Drehen der Flugrichtung
+  // Teilchen mit Pfeilen. Angehalten: v-Pfeil mit Griff (Länge = Betrag, Richtung = Flugrichtung)
   const speed = Math.hypot(part.vx, part.vy) || 1;
   const dir = { x: part.vx / speed, y: part.vy / speed };
-  const unit = mode === 'kreis' ? (reg.x1 - reg.x0) * 0.09 : 1.6;     // Pfeillänge in cm
-  const vTip = { x: px + s * unit * dir.x, y: py - s * unit * dir.y };
-  if (showForces && charge !== 0) {
-    const { ey } = fieldsAt(part.x, ph.s);
-    const fl = E_CHARGE * speed * Math.abs(ph.b);
-    const fel = E_CHARGE * Math.abs(ey);
-    const fmax = Math.max(fl, fel) || 1;
-    if (ph.b !== 0) {
-      // F_L = q · v × B: senkrecht zu v, zum Kreismittelpunkt
-      const k = -Math.sign(charge * ph.b) * unit * fl / fmax;
-      arrow(ctx, px, py, s * -dir.y * k, -s * dir.x * k, C.fl, 'F_L');
-    }
-    if (ey !== 0) {
-      const k = Math.sign(charge * ey) * unit * fel / fmax;           // F_el = q · E (E nur in y)
-      arrow(ctx, px, py, 0, -s * k, C.fel, 'F_el', -1);
-    }
+  const unit = mode === 'kreis' ? (reg.x1 - reg.x0) * 0.09 : 1.6;     // Pfeillänge in cm bei V_REF
+  const vLen = unit * speed / V_REF;
+  const vTip = { x: px + s * vLen * dir.x, y: py - s * vLen * dir.y };
+  if (showForces && charge !== 0 && ph.b !== 0) {
+    // F_L = q · v × B: senkrecht zu v, zum Kreismittelpunkt
+    const k = -Math.sign(charge * ph.b) * unit;
+    arrow(ctx, px, py, s * -dir.y * k, -s * dir.x * k, C.fl, 'F_L');
   }
   if (showForces || !playing) {
     arrow(ctx, px, py, vTip.x - px, vTip.y - py, C.v, 'v');
@@ -340,7 +317,7 @@ function draw() {
   ctx.textBaseline = 'middle';
   ctx.fillText(look.sign, px, py - 1);
 
-  view = { s, ox, oy, reg, particle: { x: px, y: py }, vTip };
+  view = { s, ox, oy, reg, unit, particle: { x: px, y: py }, vTip };
 }
 
 const PARTICLES = {
@@ -349,49 +326,49 @@ const PARTICLES = {
   [0]: { color: '#78909c', sign: '', name: 'neutrales Teilchen' },
 };
 
-// ---------------- Werte und Erklärung
+// ---------------- Werte, Erklärung und Steuerfeld
 const tex = (t, display = false) => katex.renderToString(t, { displayMode: display, throwOnError: false });
 
 function updateInfo() {
   const ph = physics();
-  const s = ph.s;
-  const sign = v => (v > 0 ? '+' : v < 0 ? '−' : '');
-  $('fieldSettings').innerHTML = `U<sub>A</sub> = ${formatNumber(s.anode / 1000, 1)} kV · U<sub>P</sub> = ${sign(s.plate)}${formatNumber(Math.abs(s.plate) / 1000, 1)} kV · `
-    + `I = ${sign(s.coil)}${formatNumber(Math.abs(s.coil), 3)} A${s.realistic ? ' · realistische Werte' : ''}`
-    + ` · Teilchen: ${PARTICLES[charge].name}`;
+  const bText = ph.b === 0 ? 'kein Magnetfeld' : `B = ${formatNumber(Math.abs(ph.b) * 1000, 2)} mT ${ph.b > 0 ? '⊙' : '⊗'}`;
+
+  // Steuerfeld
+  $('simBSlider').value = fieldMag;
+  $('simBOut').textContent = `${formatNumber(fieldMag * 1000, 2)} mT`;
+  $('simBStatus').textContent = fieldDir > 0
+    ? 'Magnetfeld zeigt aus dem Bildschirm heraus (⊙).'
+    : 'Magnetfeld zeigt in den Bildschirm hinein (⊗).';
+  $('simVOut').innerHTML = tex(`v = ${sci(ph.speed, 3)}\\,\\mathrm{\\tfrac{m}{s}}`);
+
+  $('fieldSettings').innerHTML = `${bText} · v = ${tex(`${sci(ph.speed, 3)}\\,\\mathrm{\\tfrac{m}{s}}`)} · Teilchen: ${PARTICLES[charge].name}`;
 
   const rows = [];
-  rows.push(['Geschwindigkeit', `v = \\sqrt{\\tfrac{2\\,e\\,U_A}{m}} = ${sci(ph.v, 3)}\\,\\mathrm{\\tfrac{m}{s}}`]);
+  rows.push(['Geschwindigkeit', `v = ${sci(ph.speed, 3)}\\,\\mathrm{\\tfrac{m}{s}}`]);
+  rows.push(['Magnetfeld', `B = ${num(Math.abs(ph.b) * 1000, 2)}\\,\\mathrm{mT}`]);
   if (ph.b !== 0) {
-    rows.push(['Magnetfeld', `B = ${num(Math.abs(ph.b) * 1000, 3)}\\,\\mathrm{mT}`]);
     if (charge !== 0) {
-      const fl = E_CHARGE * ph.v * Math.abs(ph.b);
+      const fl = E_CHARGE * ph.speed * Math.abs(ph.b);
       rows.push(['Lorentzkraft', `F_L = e\\,v\\,B = ${sci(fl, 3)}\\,\\mathrm{N}`]);
       rows.push(['Bahnradius', `r = \\frac{m\\,v}{e\\,B} = ${num(ph.r, 1)}\\,\\mathrm{cm}`]);
     } else {
       rows.push(['Lorentzkraft', 'F_L = q\\,v\\,B = 0 \\quad (q = 0)']);
     }
   }
-  if (ph.e !== 0) {
-    const e = Math.abs(ph.e);
-    rows.push(['Elektrisches Feld', `E = ${s.realistic ? '0{,}75 \\cdot ' : ''}\\frac{U_P}{d} = ${sci(e, 3)}\\,\\mathrm{\\tfrac{V}{m}}`]);
-    rows.push(['Elektrische Kraft', charge !== 0 ? `F_{el} = e\\,E = ${sci(E_CHARGE * e, 3)}\\,\\mathrm{N}` : 'F_{el} = q\\,E = 0']);
-    if (ph.b !== 0 && charge !== 0) rows.push(['Gerader Strahl bei', `v = \\frac{E}{B} = ${sci(e / Math.abs(ph.b), 3)}\\,\\mathrm{\\tfrac{m}{s}}`]);
-  }
   $('fieldValues').innerHTML = rows.map(([label, t]) => `<tr><td>${label}</td><td>${tex(t)}</td></tr>`).join('');
 
   const notes = [];
   const particle = PARTICLES[charge].name;
   if (charge === 1) {
-    notes.push('<p class="calc-note">Gedankenexperiment: ein Teilchen mit derselben Masse und Geschwindigkeit wie das Elektron, aber mit <strong>positiver</strong> Ladung.</p>');
+    notes.push('<p class="calc-note">Gedankenexperiment: ein Teilchen mit derselben Masse wie das Elektron, aber mit <strong>positiver</strong> Ladung.</p>');
   } else if (charge === 0) {
-    notes.push('<p class="calc-note">Gedankenexperiment: ein <strong>ungeladenes</strong> Teilchen mit derselben Masse und Geschwindigkeit wie das Elektron.</p>');
+    notes.push('<p class="calc-note">Gedankenexperiment: ein <strong>ungeladenes</strong> Teilchen mit derselben Masse wie das Elektron.</p>');
   }
   if (charge === 0) {
-    notes.push(`<p>Auf ein ungeladenes Teilchen wirken weder die Lorentzkraft noch die elektrische Kraft (beide sind proportional zur Ladung q).
-      Es fliegt deshalb <strong>geradeaus</strong> – egal wie stark die Felder sind.</p>`);
+    notes.push(`<p>Auf ein ungeladenes Teilchen wirkt keine Lorentzkraft (sie ist proportional zur Ladung q).
+      Es fliegt deshalb <strong>geradeaus</strong> – egal wie stark das Magnetfeld ist.</p>`);
   } else if (ph.b === 0) {
-    notes.push('<p>Es fließt kein Spulenstrom, also gibt es kein Magnetfeld. Stelle im Bedienfeld einen Spulenstrom ein.</p>');
+    notes.push('<p>Das Magnetfeld ist ausgeschaltet. Stelle im Steuerfeld ein Magnetfeld ein.</p>');
   } else {
     notes.push(`<p>Das Magnetfeld zeigt ${ph.b > 0 ? 'aus dem Bildschirm heraus (⊙)' : 'in den Bildschirm hinein (⊗)'}.
       Die Lorentzkraft steht immer senkrecht zur Geschwindigkeit. Sie ändert nur die Richtung der Bewegung,
@@ -403,7 +380,6 @@ function updateInfo() {
       : `<p><strong>Richtung:</strong> Für positive Ladungen gilt die Drei-Finger-Regel der <strong>rechten</strong> Hand:
         Daumen in Bewegungsrichtung, Zeigefinger in Richtung des Magnetfelds, der Mittelfinger zeigt die Richtung der Kraft.
         Deshalb wird das positive Teilchen zur anderen Seite abgelenkt als das Elektron.</p>`);
-    if (!ph.onlyB) notes.push('<p>Zusätzlich wirkt das elektrische Feld. Die Bahn ist dann kein Kreis mehr.</p>');
     if (ph.circle && ph.r > MAX_CIRCLE) notes.push('<p>Das Magnetfeld ist so schwach, dass der Kreis zu groß zum Zeichnen ist.</p>');
   }
   if (mode === 'kreis' && ph.circle && ph.r <= MAX_CIRCLE) {
@@ -422,18 +398,24 @@ function setMode(next) {
   draw();
 }
 
+function setField(value) {
+  fieldMag = clamp(value, B_RANGE);
+  updateInfo();
+}
+
 // ---------------- Animation
 function frame(time) {
   if (currentView() !== 'feld') { lastTime = null; return; }
   const dt = lastTime === null ? 0 : Math.min(0.05, (time - lastTime) / 1000);
   lastTime = time;
   if (!part) resetParticle();
-  if (playing && beamIntensity(beamSettings()) > 0 && view) {
+  if (playing && view) {
     if (hitAt !== null) {
       if (time - hitAt > 700) resetParticle();          // nach dem Aufprall kurz liegen lassen
     } else {
-      // Breite des Ausschnitts in DURATION Sekunden: stark verlangsamt
-      advance((view.reg.x1 - view.reg.x0) / DURATION * dt);
+      // stark verlangsamt: bei V_REF die Breite des Ausschnitts in DURATION Sekunden
+      const speed = Math.hypot(part.vx, part.vy);
+      advance((view.reg.x1 - view.reg.x0) / DURATION * (speed / V_REF) * dt);
       const r = view.reg, mx = (r.x1 - r.x0) * 0.05;
       const x = part.x * 100, y = part.y * 100;
       if (x < r.x0 - mx || x > r.x1 + mx || y < r.y0 - mx || y > r.y1 + mx) resetParticle();
@@ -479,13 +461,15 @@ function initDragging() {
       trail.at(-1).length = 0;                    // neues Spurstück beginnt an der neuen Stelle
       trail.at(-1).push({ x, y });
     } else {
-      // Richtung zur Pfeilspitze, Betrag der Geschwindigkeit bleibt
+      // Pfeil zur Fingerposition: Richtung = Flugrichtung, Länge = Betrag der Geschwindigkeit
       const dx = x - part.x * 100, dy = y - part.y * 100;
       const len = Math.hypot(dx, dy);
       if (len > 0.01) {
-        const speed = Math.hypot(part.vx, part.vy);
+        const speed = clamp(len / view.unit * V_REF, V_RANGE);
         part.vx = speed * dx / len;
         part.vy = speed * dy / len;
+        startSpeed = speed;
+        updateInfo();
       }
     }
     draw();
@@ -497,22 +481,30 @@ function initDragging() {
 
 function setPlaying(value) {
   playing = value;
-  $('playBtn').textContent = playing ? 'Anhalten' : 'Weiter';
+  const button = $('playBtn');
+  button.textContent = playing ? 'Anhalten' : 'Weiter';
+  button.classList.toggle('on', playing);
   $('fieldCanvas').style.touchAction = playing ? '' : 'none';   // beim Ziehen nicht scrollen
 }
 
-/** Bei geänderten Einstellungen (vom Bedienfeld aufgerufen) */
-export function updateFieldView() {
-  if (currentView() !== 'feld') return;
-  updateInfo();
+/** Beim Öffnen: v und B einmalig aus dem Experiment übernehmen, danach unabhängig */
+function takeOverFromExperiment() {
+  const s = beamSettings();
+  startSpeed = s.anode >= 500 ? clamp(electronSpeed(s.anode), V_RANGE) : V_REF;
+  const b = helmholtzField(s.coil);
+  fieldMag = clamp(Math.abs(b), B_RANGE);
+  fieldDir = b < 0 ? -1 : 1;
+  resetParticle();
 }
 
 export function initFieldView() {
   registerView('feld', {
     element: $('fieldView'),
-    onOpen: () => { updateInfo(); lastTime = null; requestAnimationFrame(frame); },
+    panel: $('simPanel'),
+    onOpen: () => { takeOverFromExperiment(); updateInfo(); lastTime = null; requestAnimationFrame(frame); },
   });
-  $('modeTube').addEventListener('click', () => setMode('roehre'));
+
+  // Teilchen
   for (const button of document.querySelectorAll('[data-charge]')) {
     button.addEventListener('click', () => {
       charge = Number(button.dataset.charge);
@@ -525,6 +517,27 @@ export function initFieldView() {
       draw();
     });
   }
+
+  // Magnetfeld: Regler, −/+, Richtung
+  const slider = $('simBSlider');
+  Object.assign(slider, { min: B_RANGE.min, max: B_RANGE.max, step: B_RANGE.step });
+  slider.addEventListener('input', () => setField(Number(slider.value)));
+  for (const button of document.querySelectorAll('[data-sim-step]')) {
+    const step = () => setField(Math.round(fieldMag / B_RANGE.step + Number(button.dataset.simStep)) * B_RANGE.step);
+    let timer = null;
+    const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
+    button.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      step();
+      timer = setTimeout(() => { timer = setInterval(step, 70); }, 400);
+    });
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(type, stop);
+    button.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') step(); });
+  }
+  $('simBDirBtn').addEventListener('click', () => { fieldDir = -fieldDir; updateInfo(); });
+
+  // Bewegung und Darstellung
+  $('modeTube').addEventListener('click', () => setMode('roehre'));
   $('modeCircle').addEventListener('click', () => setMode('kreis'));
   const syncForces = () => {
     showForces = $('showForces').checked;

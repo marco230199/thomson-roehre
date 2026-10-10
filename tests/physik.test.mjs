@@ -142,3 +142,17 @@ test('Teilchenschritt: positives Teilchen spiegelbildlich, neutrales geradeaus, 
   for (let i = 0; i < 2000; i++) stepParticle(p, 0.0002 / v0, { ...s, plate: 0 }, -E_OVER_M);
   near(Math.hypot(p.vx, p.vy) / v0, 1, 1e-9, 'Betrag der Geschwindigkeit im Magnetfeld');
 });
+
+test('2D-Simulation: homogenes Magnetfeld überall, Kreisbahn mit r = m·v/(e·B)', async () => {
+  const { stepParticle, fieldsAt } = await import('../js/physik.js');
+  assert.deepEqual(fieldsAt(-0.5, { uniformB: 2e-3 }), { ey: 0, bz: 2e-3 }, 'auch weit vor dem Schirm');
+  const v = 2e7, b = 2e-3;
+  const r = v / (E_OVER_M * b);
+  const p = { x: -0.3, y: 0, vx: v, vy: 0 };
+  // halbe Umdrehung: danach liegt das Teilchen 2r höher (Elektron, B zum Betrachter → Ablenkung nach oben)
+  const steps = 4000, dt = Math.PI * r / v / steps;
+  for (let i = 0; i < steps; i++) stepParticle(p, dt, { uniformB: b }, -E_OVER_M);
+  near(p.y, 2 * r, 1e-4 * r, 'Durchmesser');
+  near(p.x, -0.3, 1e-4 * r, 'zurück über dem Startpunkt');
+  near(p.vx, -v, 1e-3 * v, 'Gegenrichtung');
+});

@@ -1,20 +1,25 @@
 // ------------------------------------------------------------------
-// Ansichten: 3D-Aufbau, Messansicht, 2D-Ansicht Magnetfeld
-// Die Zusatzansichten liegen anstelle der 3D-Szene; das Bedienfeld bleibt.
+// Ansichten: 3D-Aufbau, Messansicht, 2D-Simulation
+// Die Zusatzansichten liegen anstelle der 3D-Szene. Eine Ansicht mit eigenem Steuerfeld
+// (panel) ersetzt dabei das Bedienfeld des Experiments.
 // ------------------------------------------------------------------
-const views = {};          // name → { element, onOpen }
+const views = {};          // name → { element, panel, onOpen }
 let current = 'aufbau';
 
 export const currentView = () => current;
 
-export function registerView(name, { element, onOpen = () => {} }) {
-  views[name] = { element, onOpen };
+export function registerView(name, { element, panel = null, onOpen = () => {} }) {
+  views[name] = { element, panel, onOpen };
 }
 
-/** Ansicht wechseln ('aufbau', 'messen', 'feld'). Knöpfe mit data-view schalten um. */
+/** Ansicht wechseln ('aufbau', 'messen', 'feld' = 2D-Simulation). Knöpfe mit data-view schalten um. */
 export function setView(name) {
   current = views[name] ? name : 'aufbau';
-  for (const [key, view] of Object.entries(views)) view.element.hidden = key !== current;
+  for (const [key, view] of Object.entries(views)) {
+    view.element.hidden = key !== current;
+    if (view.panel) view.panel.hidden = key !== current;
+  }
+  document.getElementById('expPanel').hidden = Boolean(views[current]?.panel);
   document.body.classList.toggle('overlay-open', current !== 'aufbau');
   for (const button of document.querySelectorAll('[data-view]')) {
     const active = button.dataset.view === current;
