@@ -124,3 +124,21 @@ test('Startwerte aus der Adresse', async () => {
   assert.equal(state.anode, 5000, 'auf den Reglerbereich begrenzt');
   assert.deepEqual([state.coil, state.coilPolarity], [1, -1]);
 });
+
+test('Teilchenschritt: positives Teilchen spiegelbildlich, neutrales geradeaus, |v| im B-Feld konstant', async () => {
+  const { stepParticle, electronSpeed: speed } = await import('../js/physik.js');
+  const s = { anode: 4000, plate: 2000, coil: 0.2, realistic: false };
+  const v0 = speed(4000);
+  const run = qm => {
+    const p = { x: -0.005, y: 0, vx: v0, vy: 0 };
+    for (let i = 0; i < 300; i++) stepParticle(p, 0.0002 / v0, s, qm);
+    return p;
+  };
+  const neg = run(-E_OVER_M), pos = run(E_OVER_M), neutral = run(0);
+  near(pos.x, neg.x, 1e-12, 'gleicher Weg in x');
+  near(pos.y, -neg.y, 1e-12, 'gespiegelt in y');
+  near(neutral.y, 0, 1e-15, 'neutral: keine Ablenkung');
+  const p = { x: 0.01, y: 0, vx: v0, vy: 0 };
+  for (let i = 0; i < 2000; i++) stepParticle(p, 0.0002 / v0, { ...s, plate: 0 }, -E_OVER_M);
+  near(Math.hypot(p.vx, p.vy) / v0, 1, 1e-9, 'Betrag der Geschwindigkeit im Magnetfeld');
+});

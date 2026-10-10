@@ -66,8 +66,17 @@ Feldpfeile** (oder der Knopf „Ablenkung im Magnetfeld (2D)“) öffnet die 2D-
   sind ein Gedankenexperiment mit gleicher Masse und Geschwindigkeit wie das Elektron: Das positive
   Teilchen wird spiegelbildlich abgelenkt (Drei-Finger-Regel der rechten Hand), das neutrale fliegt
   geradeaus. Die Auswahl gilt nur für die 2D-Ansicht.
-- Ein Elektron läuft stark verlangsamt die Bahn entlang. Über das Häkchen „Pfeile“ (anfangs aus)
-  lassen sich v, Lorentzkraft F_L und (bei Plattenspannung) elektrische Kraft F_el einblenden
+- Ein einzelnes Teilchen fliegt stark verlangsamt durch die Felder (eigener Zustand aus Ort und
+  Geschwindigkeit, dieselbe Physik wie der Strahl). Über das Häkchen „Pfeile“ (anfangs aus) lassen
+  sich v, Lorentzkraft F_L und (bei Plattenspannung) elektrische Kraft F_el einblenden
+- **Spur** ein/aus: Die Spur zeigt den Weg, den das Teilchen tatsächlich zurückgelegt hat (nach dem
+  Verschieben beginnt ein neues Spurstück; „Neu starten“ löscht sie). Den berechneten Strahl gibt
+  es in der 2D-Ansicht nicht.
+- **Anhalten** heißt: Das Teilchen steht still. Ändert man dann Spulenstrom oder Spannung, bleibt
+  es an seinem Ort; nur die Vorschau (gestrichelter Kreis mit Mittelpunkt) passt sich an
+- Im angehaltenen Zustand lässt sich das Teilchen **frei verschieben** und über den Griff an der
+  Spitze des v-Pfeils die **Flugrichtung drehen**. Mit „Weiter“ fliegt es von dort weiter.
+  **Neu starten** setzt es zurück an die Blende
 - **Ganze Kreisbahn:** zoomt heraus und zeigt den vollständigen Kreis mit Mittelpunkt M und Radius r,
   von dem der Strahl in der Röhre nur ein kurzes Stück ist (nur bei reinem Magnetfeld)
 - Werte v, B, F_L, r (und E, F_el, v = E/B bei zusätzlichem E-Feld)

@@ -3,9 +3,12 @@
 // Blick auf den Leuchtschirm (wie im Handblatt), Elektron läuft verlangsamt die Bahn entlang.
 // ------------------------------------------------------------------
 import katex from 'katex';
-import { TUBE, E_CHARGE, E_MASS, REALISTIC } from './config.js';
+import { TUBE, E_CHARGE, E_OVER_M, REALISTIC } from './config.js';
 import { beamSettings } from './state.js';
-import { traceBeam, beamIntensity, helmholtzField, electronSpeed, plateField, circleRadius } from './physik.js';
+import {
+  beamIntensity, helmholtzField, electronSpeed, plateField, circleRadius,
+  stepParticle, fieldsAt, beamStartX,
+} from './physik.js';
 import { sci, num } from './auswertung.js';
 import { formatNumber } from './hilfen.js';
 import { registerView, currentView } from './ansichten.js';
@@ -17,17 +20,24 @@ const C = {
 };
 const SCREEN_LEN = TUBE.screenLength * 100;    // cm
 const HALF_GAP = TUBE.plateDistance * 50;       // cm
-const DURATION = 3.2;                            // s für einen Durchlauf des Elektrons
+const DURATION = 3.2;                            // s, um die Breite des Ausschnitts zu durchfliegen
 const MAX_CIRCLE = 300;                          // cm: größere Kreise nicht als ganze Bahn zeigen
 
 let mode = 'roehre';       // 'roehre' oder 'kreis'
 let showForces = false;    // Pfeile v, F_L, F_el (per Häkchen einblendbar)
 let showCircle = true;
 let charge = -1;           // Teilchen: −1 Elektron, +1 „positives Elektron“, 0 neutral (gleiche Masse)
+let showTrail = true;      // Spur: tatsächlich zurückgelegter Weg des Teilchens
 let playing = true;
-let progress = 0;          // 0 … 1 (+ kurze Pause am Ende)
 let lastTime = null;
-let cache = { key: '', pts: [], lengths: [], total: 0 };
+// Das einzelne Teilchen: Ort in m, Geschwindigkeit in m/s. Angehalten bleibt es genau hier,
+// auch wenn sich die Felder ändern.
+let part = null;
+let hitAt = null;          // Zeitpunkt, zu dem das Teilchen auf eine Platte getroffen ist
+let drag = null;           // 'pos' oder 'dir' beim Ziehen
+let trail = [];            // Spur in cm: Liste von Teilstücken (neues Stück nach dem Verschieben)
+const TRAIL_MAX = 6000;     // höchstens so viele Punkte, die ältesten fallen weg
+let view = null;           // Abbildung cm → Pixel des letzten Bildes
 
 // ---------------- Physik der aktuellen Einstellung
 function physics() {
@@ -44,27 +54,68 @@ function physics() {
   return { s, v, b, e, onlyB, circle, flip, r, center: { x: x0, y: Math.sign(b) * flip * r } };
 }
 
-function updateTrace() {
-  const key = JSON.stringify(beamSettings()) + charge;
-  if (key === cache.key) return;
-  // Gleiche Masse, entgegengesetzte Ladung → spiegelbildliche Bahn; ungeladen → keine Kräfte, gerade Bahn
-  const s = charge === 0 ? { ...beamSettings(), plate: 0, coil: 0 } : beamSettings();
-  const pts = traceBeam(s).points.map(p => ({ x: p.x * 100, y: -charge * p.y * 100 }));
-  const lengths = [0];
-  for (let i = 1; i < pts.length; i++) lengths.push(lengths[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
-  cache = { key, pts, lengths, total: lengths.at(-1) || 0 };
+
+// ---------------- Das einzelne Teilchen
+function resetParticle() {
+  const st = beamSettings();
+  part = { x: beamStartX(st.realistic), y: 0, vx: electronSpeed(Math.max(st.anode, 1)), vy: 0 };
+  hitAt = null;
+  trail = [[{ x: part.x * 100, y: part.y * 100 }]];
 }
 
-// Ort und Bewegungsrichtung bei Anteil t der Bahnlänge
-function along(t) {
-  const { pts, lengths, total } = cache;
-  const target = Math.min(t, 1) * total;
-  let i = 1;
-  while (i < pts.length - 1 && lengths[i] < target) i++;
-  const a = pts[i - 1], b = pts[i];
-  const f = (target - lengths[i - 1]) / ((lengths[i] - lengths[i - 1]) || 1);
-  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-  return { x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y), dir: { x: (b.x - a.x) / len, y: (b.y - a.y) / len } };
+const HALF_GAP_M = TUBE.plateDistance / 2;
+const PLATE_X = [-0.002, TUBE.screenLength + 0.002];       // Ausdehnung der Platten in m
+
+/** Teilchen um die Weglänge ds (in cm) weiterbewegen; trifft es eine Platte, bleibt es dort. */
+function advance(ds) {
+  const speed = Math.hypot(part.vx, part.vy);
+  if (speed === 0) return;
+  const steps = Math.max(1, Math.ceil(ds / 0.05));
+  const dt = ds / 100 / speed / steps;
+  const st = beamSettings();
+  const qm = charge * E_OVER_M;
+  for (let i = 0; i < steps; i++) {
+    const prev = { x: part.x, y: part.y };
+    stepParticle(part, dt, st, qm);
+    addTrailPoint();
+    for (const yp of [HALF_GAP_M, -HALF_GAP_M]) {
+      if ((prev.y - yp) * (part.y - yp) < 0) {
+        const f = (yp - prev.y) / (part.y - prev.y);
+        const xHit = prev.x + f * (part.x - prev.x);
+        if (xHit >= PLATE_X[0] && xHit <= PLATE_X[1]) {
+          part.x = xHit;
+          part.y = yp;
+          trail.at(-1).pop();
+          addTrailPoint();
+          hitAt = performance.now();
+          return;
+        }
+      }
+    }
+  }
+}
+
+function addTrailPoint() {
+  const segment = trail.at(-1);
+  const p = { x: part.x * 100, y: part.y * 100 };
+  const last = segment.at(-1);
+  if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 0.03) segment.push(p);
+  let count = trail.reduce((n, seg) => n + seg.length, 0);
+  while (count > TRAIL_MAX && trail.length) {
+    trail[0].shift();
+    count--;
+    if (trail[0].length === 0 && trail.length > 1) trail.shift();
+  }
+}
+
+/** Kreisbahn, auf der das Teilchen von seinem jetzigen Zustand aus weiterfliegen würde (cm) */
+function particleCircle(ph) {
+  if (!ph.circle || !part) return null;
+  const speed = Math.hypot(part.vx, part.vy);
+  const r = speed / (E_OVER_M * Math.abs(ph.b)) * 100;
+  // Kraft q·v×B zeigt zum Mittelpunkt: Richtung sign(q·B)·(vy, −vx)
+  const k = Math.sign(charge * ph.b) / speed;
+  return { x: part.x * 100 + r * k * part.vy, y: part.y * 100 - r * k * part.vx, r };
 }
 
 // ---------------- Zeichnen
@@ -124,7 +175,6 @@ function draw() {
   const cv = $('fieldCanvas');
   const W = cv.clientWidth;
   if (W === 0) return;
-  updateTrace();
   const ph = physics();
   const H = Math.round(W * (mode === 'kreis' ? 0.7 : 0.55));
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -210,60 +260,87 @@ function draw() {
     return;
   }
 
-  // Kreisbahn mit Mittelpunkt (nur bei reinem Magnetfeld)
-  if (showCircle && ph.circle && ph.r <= MAX_CIRCLE) {
-    const cx = X(ph.center.x), cy = Y(ph.center.y);
+  if (!part) resetParticle();
+  const px = X(part.x * 100), py = Y(part.y * 100);
+
+  // Kreisbahn, auf der das Teilchen von hier aus weiterfliegt (nur bei reinem Magnetfeld)
+  const circ = particleCircle(ph);
+  if (showCircle && circ && circ.r <= MAX_CIRCLE) {
+    const cx = X(circ.x), cy = Y(circ.y);
     ctx.setLineDash([8, 7]);
     ctx.strokeStyle = C.circle;
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(cx, cy, s * ph.r, 0, 2 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, s * circ.r, 0, 2 * Math.PI); ctx.stroke();
     ctx.setLineDash([]);
-    const e = along(progress);
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(X(e.x), Y(e.y)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
     ctx.fillStyle = C.ink;
     ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 2 * Math.PI); ctx.fill();
     ctx.font = 'italic 600 16px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     if (cx > -50 && cx < W + 50 && cy > -50 && cy < H + 50) ctx.fillText('M', cx + 7, cy - 4);
-    const mx = (cx + X(e.x)) / 2, my = (cy + Y(e.y)) / 2;
+    const mx = (cx + px) / 2, my = (cy + py) / 2;
     if (mx > 0 && mx < W && my > 0 && my < H) ctx.fillText('r', mx + 6, my);
   }
 
-  // Bahn
-  ctx.strokeStyle = C.beam;
-  ctx.lineWidth = 3;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  cache.pts.forEach((p, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, X(p.x), Y(p.y)));
-  ctx.stroke();
+  // Spur: tatsächlich zurückgelegter Weg des Teilchens
+  if (showTrail) {
+    ctx.strokeStyle = C.beam;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const segment of trail) {
+      if (segment.length < 2) continue;
+      ctx.beginPath();
+      segment.forEach((p, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, X(p.x), Y(p.y)));
+      ctx.stroke();
+    }
+  }
 
-  // Elektron mit Pfeilen
-  const e = along(progress);
+  // Teilchen mit Pfeilen. Angehalten: v-Pfeil mit Griff zum Drehen der Flugrichtung
+  const speed = Math.hypot(part.vx, part.vy) || 1;
+  const dir = { x: part.vx / speed, y: part.vy / speed };
   const unit = mode === 'kreis' ? (reg.x1 - reg.x0) * 0.09 : 1.6;     // Pfeillänge in cm
-  if (showForces) {
-    const fl = Math.abs(charge) * E_CHARGE * ph.v * Math.abs(ph.b);
-    const fel = Math.abs(charge) * E_CHARGE * Math.abs(ph.e);
+  const vTip = { x: px + s * unit * dir.x, y: py - s * unit * dir.y };
+  if (showForces && charge !== 0) {
+    const { ey } = fieldsAt(part.x, ph.s);
+    const fl = E_CHARGE * speed * Math.abs(ph.b);
+    const fel = E_CHARGE * Math.abs(ey);
     const fmax = Math.max(fl, fel) || 1;
-    arrow(ctx, X(e.x), Y(e.y), s * unit * e.dir.x, -s * unit * e.dir.y, C.v, 'v');
-    if (ph.b !== 0 && charge !== 0) {
-      // F_L = q · v × B: senkrecht zu v, Richtung hängt vom Vorzeichen der Ladung ab
-      const k = Math.sign(ph.b) * ph.flip * unit * fl / fmax;
-      arrow(ctx, X(e.x), Y(e.y), s * -e.dir.y * k, -s * e.dir.x * k, C.fl, 'F_L');
+    if (ph.b !== 0) {
+      // F_L = q · v × B: senkrecht zu v, zum Kreismittelpunkt
+      const k = -Math.sign(charge * ph.b) * unit * fl / fmax;
+      arrow(ctx, px, py, s * -dir.y * k, -s * dir.x * k, C.fl, 'F_L');
     }
-    if (ph.e !== 0 && charge !== 0 && e.x >= 0 && e.x <= SCREEN_LEN) {
-      const k = Math.sign(ph.e) * ph.flip * unit * fel / fmax;
-      arrow(ctx, X(e.x), Y(e.y), 0, -s * k, C.fel, 'F_el', -1);
+    if (ey !== 0) {
+      const k = Math.sign(charge * ey) * unit * fel / fmax;           // F_el = q · E (E nur in y)
+      arrow(ctx, px, py, 0, -s * k, C.fel, 'F_el', -1);
     }
+  }
+  if (showForces || !playing) {
+    arrow(ctx, px, py, vTip.x - px, vTip.y - py, C.v, 'v');
+  }
+  if (!playing) {
+    ctx.strokeStyle = C.v;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(vTip.x, vTip.y, 10, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
   }
   const look = PARTICLES[charge];
   ctx.fillStyle = look.color;
-  ctx.beginPath(); ctx.arc(X(e.x), Y(e.y), 11, 0, 2 * Math.PI); ctx.fill();
+  ctx.beginPath(); ctx.arc(px, py, 11, 0, 2 * Math.PI); ctx.fill();
+  if (!playing) {
+    ctx.strokeStyle = '#ffd54f';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(px, py, 14, 0, 2 * Math.PI); ctx.stroke();
+  }
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 18px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(look.sign, X(e.x), Y(e.y) - 1);
+  ctx.fillText(look.sign, px, py - 1);
+
+  view = { s, ox, oy, reg, particle: { x: px, y: py }, vTip };
 }
 
 const PARTICLES = {
@@ -350,12 +427,78 @@ function frame(time) {
   if (currentView() !== 'feld') { lastTime = null; return; }
   const dt = lastTime === null ? 0 : Math.min(0.05, (time - lastTime) / 1000);
   lastTime = time;
-  if (playing) {
-    progress += dt / DURATION;
-    if (progress > 1.15) progress = 0;     // kurze Pause am Ende, dann von vorne
+  if (!part) resetParticle();
+  if (playing && beamIntensity(beamSettings()) > 0 && view) {
+    if (hitAt !== null) {
+      if (time - hitAt > 700) resetParticle();          // nach dem Aufprall kurz liegen lassen
+    } else {
+      // Breite des Ausschnitts in DURATION Sekunden: stark verlangsamt
+      advance((view.reg.x1 - view.reg.x0) / DURATION * dt);
+      const r = view.reg, mx = (r.x1 - r.x0) * 0.05;
+      const x = part.x * 100, y = part.y * 100;
+      if (x < r.x0 - mx || x > r.x1 + mx || y < r.y0 - mx || y > r.y1 + mx) resetParticle();
+    }
   }
   draw();
   requestAnimationFrame(frame);
+}
+
+// ---------------- Ziehen im angehaltenen Zustand
+function pointerPos(event) {
+  const rect = $('fieldCanvas').getBoundingClientRect();
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
+function grabTarget(pos) {
+  if (playing || !view) return null;
+  if (Math.hypot(pos.x - view.vTip.x, pos.y - view.vTip.y) <= 22) return 'dir';
+  if (Math.hypot(pos.x - view.particle.x, pos.y - view.particle.y) <= 24) return 'pos';
+  return null;
+}
+function initDragging() {
+  const cv = $('fieldCanvas');
+  cv.addEventListener('pointerdown', event => {
+    drag = grabTarget(pointerPos(event));
+    if (!drag) return;
+    if (drag === 'pos') trail.push([{ x: part.x * 100, y: part.y * 100 }]);
+    event.preventDefault();
+    cv.setPointerCapture(event.pointerId);
+    hitAt = null;
+  });
+  cv.addEventListener('pointermove', event => {
+    const pos = pointerPos(event);
+    if (!drag) {
+      if (event.pointerType === 'mouse') cv.style.cursor = grabTarget(pos) ? 'grab' : '';
+      return;
+    }
+    const r = view.reg;
+    const x = Math.min(r.x1, Math.max(r.x0, (pos.x - view.ox) / view.s));     // cm
+    const y = Math.min(r.y1, Math.max(r.y0, (view.oy - pos.y) / view.s));
+    if (drag === 'pos') {
+      part.x = x / 100;
+      part.y = y / 100;
+      trail.at(-1).length = 0;                    // neues Spurstück beginnt an der neuen Stelle
+      trail.at(-1).push({ x, y });
+    } else {
+      // Richtung zur Pfeilspitze, Betrag der Geschwindigkeit bleibt
+      const dx = x - part.x * 100, dy = y - part.y * 100;
+      const len = Math.hypot(dx, dy);
+      if (len > 0.01) {
+        const speed = Math.hypot(part.vx, part.vy);
+        part.vx = speed * dx / len;
+        part.vy = speed * dy / len;
+      }
+    }
+    draw();
+  });
+  const end = () => { drag = null; };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+}
+
+function setPlaying(value) {
+  playing = value;
+  $('playBtn').textContent = playing ? 'Anhalten' : 'Weiter';
+  $('fieldCanvas').style.touchAction = playing ? '' : 'none';   // beim Ziehen nicht scrollen
 }
 
 /** Bei geänderten Einstellungen (vom Bedienfeld aufgerufen) */
@@ -377,7 +520,7 @@ export function initFieldView() {
         b.classList.toggle('active', b === button);
         b.setAttribute('aria-pressed', String(b === button));
       }
-      progress = 0;
+      resetParticle();
       updateInfo();
       draw();
     });
@@ -389,9 +532,10 @@ export function initFieldView() {
   };
   $('showForces').addEventListener('change', syncForces);
   syncForces();
-  $('showCircle').addEventListener('change', e => { showCircle = e.target.checked; });
-  $('playBtn').addEventListener('click', () => {
-    playing = !playing;
-    $('playBtn').textContent = playing ? 'Anhalten' : 'Weiter';
-  });
+  $('showCircle').addEventListener('change', e => { showCircle = e.target.checked; draw(); });
+  $('showTrail').addEventListener('change', e => { showTrail = e.target.checked; draw(); });
+  $('playBtn').addEventListener('click', () => setPlaying(!playing));
+  $('restartBtn').addEventListener('click', () => { resetParticle(); draw(); });
+  initDragging();
+  setPlaying(true);
 }
