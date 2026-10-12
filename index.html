@@ -64,7 +64,7 @@
     <ul class="legend inline">
       <li class="arrow-legend"><span class="dot" style="background:#2e7d32"></span><span>Geschwindigkeit v</span></li>
       <li class="arrow-legend"><span class="dot" style="background:#c62828"></span><span>Lorentzkraft F<sub>L</sub></span></li>
-      <li><span class="dot" style="background:#1565c0"></span><span>Magnetfeld B (⊙ heraus, ⊗ hinein)</span></li>
+      <li><span class="dot" style="background:#1565c0"></span><span>Magnetfeld B (⊙ heraus, ⊗ hinein, Linien: in der Ebene)</span></li>
     </ul>
     <p class="status">Die Bewegung ist stark verlangsamt dargestellt. Nach „Anhalten“ kannst du das Teilchen verschieben und
       an der Spitze des v-Pfeils Richtung und Betrag der Geschwindigkeit einstellen.</p>
@@ -74,7 +74,7 @@
         <table class="readout field-values"><tbody id="fieldValues"></tbody></table>
       </section>
       <section class="card">
-        <h3>Warum eine Kreisbahn?</h3>
+        <h3 id="fieldExplainTitle">Warum eine Kreisbahn?</h3>
         <div id="fieldExplain"></div>
       </section>
     </div>
@@ -163,13 +163,18 @@
           <button type="button" data-sim-step="1" aria-label="B erhöhen">+</button>
         </div>
       </div>
-      <button id="simBDirBtn" type="button">Richtung umkehren</button>
+      <div class="segmented" role="group" aria-label="Richtung des Magnetfelds">
+        <button type="button" data-bdir="out" class="active" aria-pressed="true">⊙ heraus</button>
+        <button type="button" data-bdir="in" aria-pressed="false">⊗ hinein</button>
+        <button type="button" data-bdir="plane" aria-pressed="false">in der Ebene</button>
+      </div>
       <p class="status" id="simBStatus"></p>
     </section>
     <section>
       <h2>Geschwindigkeit</h2>
       <div class="sim-value" id="simVOut"></div>
-      <p class="status">Anhalten, dann die Spitze des v-Pfeils ziehen: Die Länge bestimmt den Betrag, die Richtung die Flugrichtung.</p>
+      <p class="status">Anhalten, dann die Spitze des v-Pfeils ziehen: Die Länge bestimmt den Betrag, die Richtung die Flugrichtung.
+        Ganz an das Teilchen heran gezogen: v = 0.</p>
     </section>
     <section>
       <h2>Bewegung</h2>
